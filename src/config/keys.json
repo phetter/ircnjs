@@ -1,0 +1,8 @@
+{
+  "window": {
+          "new": "M-n",
+          "kill": "M-x",
+          "next": "M-right",
+          "previous": "M-left"
+  }
+}

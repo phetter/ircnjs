@@ -1,0 +1,334 @@
+/*  main.js -- top file of ui system
+
+    zui nodejs ui
+
+    fetter (cc) 2015
+
+    TODO: add max scrollback
+*/
+
+// var top     = require('./top');
+var blessed = require('blessed');
+var events  = require('events');
+var history = require('./history');
+var date    = require('../../date').get;
+
+// var cfg     = top.cfg;
+// var blessed = top.blessed;
+// var ink     = top.ink;
+
+
+var ee;
+
+var screen;
+var prompt;
+var display;
+var output="";
+
+var editedCmd = false;
+
+var userScrollPerc = 100;
+
+// screen = top.screen;//blessed.screen();
+screen = blessed.screen();//blessed.screen();
+
+
+var uistate = {window: 'init', status: 'init', data: ''};
+
+// Share the user input with any command interperters, etc.
+function emitInput(data) {
+  //if(uistate === undefined) uistate = {window: 'init', status: 'init', data: d};
+  uistate.data = data;
+  ee.emit('zuiCon', uistate);
+}
+
+exports.update = update;
+
+function update(window, data) { // update ui with array of config objects
+/*
+  [ { "server_name/ip for window title" :
+      { data: "server text for server status window",
+        wins: [ {"chan/nick for win title": "text going to window"
+                },
+                ...
+              ]
+      },
+      ...
+    },
+    ...
+  ]
+
+  window: text,
+  status: text,
+  chan: name,
+  data: text
+*/
+  //uistate = o;
+  // print(date() + ' zui got winId:' + window.id);
+  if(window.title) display.setLabel({text: window.title});
+  if(window.status) prompt.setLabel({text: window.status});
+  print(date() + ' ' + data);
+}
+
+exports.print = print;
+
+function print(data) { // send data to output display area with additional \n
+
+  // TODO: add max scrollback config options in start(). Currently, infinite (eats mem)
+
+  output+=data+"\n";
+
+  display.setContent(output);
+
+  if(userScrollPerc == 100) display.setScrollPerc(100);
+  screen.render();
+}
+
+
+exports.write = write; // print with no newline at end
+
+function write(data) {
+
+  // TODO: add max scrollback config options in start(). Currently, infinite (eats mem)
+  output+=data;
+
+  display.setContent(output);
+
+  if(userScrollPerc == 100) display.setScrollPerc(100);
+  screen.render();
+}
+
+
+// Call this with a callback(data) to handle any input provided by user to zui.
+exports.addListener = addListener;
+
+function addListener(callback) {
+  ee.on('zuiCon', callback);
+  // ee.on('zuiData', callback);
+}
+
+
+exports.removeListener = removeListener;
+
+function removeListener(callback) {
+  ee.removeListener('zuiCon', callback);
+}
+
+
+
+function readInput(callback) {
+
+  prompt.readInput(function(err, data) {
+    if(err) console.log(err);
+
+    if(history.selected()) history.unselect();
+
+    // prompt.clearValue();
+    screen.render();
+    return callback(data);
+  });
+}
+
+
+function handleCmd(cmd) {
+  if(cmd) {
+    history.add(cmd);
+    emitInput(cmd);// send cmd package to consumers
+    //print(cmd);
+  }
+}
+
+
+exports.start = start; // run to start the ui
+
+function start() {
+
+  ee = new events.EventEmitter();
+
+  prompt = blessed.Textbox({
+    parent: screen,
+    bottom: 0,
+    left: '0%',
+    width: '100%',
+    //height: '10',
+    shrink: "grow",
+    tags: true,
+    //keys: true,
+    //inputOnFocus: true,
+    label: ' Channel Nick etc ',
+    border: {
+      // type: 'line'
+    },
+    style: {
+         fg: "white"
+      ,  border: { fg: "red"}
+      ,  hover:  { border: { fg: "green"}}
+      ,  focus:  { border: { fg: "green"}}
+      }
+  });
+
+  display = blessed.box({
+    parent: screen,
+    top: 0,
+    left: '0%',
+    width: '100%',
+    height: '100%-1',
+    //shrink: "grow",
+    tags: true,
+    scrollable: true,
+    clickable: false,
+    alwaysScroll: false,
+    input: true,
+    mouse: true,
+    scrollbar: {
+      ch: ' '
+    },
+    label: ' Output ',
+    border: {
+      // type: 'line'
+    },
+    style: {
+         fg: "white"
+      ,  border: { fg: "red"}
+      ,  hover:  { border: { fg: "green"}}
+      ,  focus:  { border: { fg: "green"}}
+
+      ,  scrollbar: {
+        inverse: true
+      }
+      }
+  });
+
+  screen.append(display);
+  screen.append(prompt);
+
+  display.setScrollPerc(100);
+
+  prompt.key('home', function(data) {
+    display.setScrollPerc(0);
+    userScrollPerc = 0;
+    screen.render();
+  });
+
+  prompt.key('end', function(data) {
+    display.setScrollPerc(100);
+    userScrollPerc = 100;
+    screen.render();
+  });
+
+  prompt.on('focus', function(data) {
+    readInput(handleCmd);
+  });
+
+  prompt.on('keypress', function(ch, key) {
+
+    if(key.name != "up" && key.name != "down") { // handle editing command from history
+
+      if(history.selected() && !editedCmd) {
+        editedCmd = true;
+        prompt.setValue(history.selected().cmd);
+        screen.render();
+      }
+    }
+    else editedCmd = false;
+  });
+
+  screen.on('mouse', function(data) {
+    if(data.action === 'wheelup') {
+      display.scroll(-display.height);
+      userScrollPerc = display.getScrollPerc();
+      screen.render();
+    } else if(data.action === 'wheeldown') {
+      display.scroll(display.height);
+      userScrollPerc = display.getScrollPerc();
+      screen.render();
+    }
+  });
+
+  // If box is focused, handle `enter`/`return` and give us some more content.
+  prompt.key('enter', function(ch, key) {
+
+    if(history.selected()) {
+      handleCmd(history.selected().cmd);
+      prompt.setContent('');
+      history.unselect();
+      prompt.focus();
+    }
+    else {
+      readInput(handleCmd);
+      prompt.clearValue();
+    }
+    screen.render();
+  });
+
+  prompt.key('up', function(ch, key) {
+
+    var o = history.selectPrev();
+
+    if(o) {
+      prompt.setContent(o.formatted);
+      screen.render();
+      readInput(handleCmd);
+    }
+  });
+
+  prompt.key('down', function(ch, key) {
+
+    var o = history.selectNext();
+
+    if(o) {
+      prompt.setContent(o.formatted);
+      screen.render();
+      readInput(handleCmd);
+    }
+    else {
+      prompt.setContent('');
+      screen.render();
+    }
+  });
+
+  prompt.key('escape', function(ch, key) {
+    readInput(handleCmd);
+    screen.render();
+  });
+
+  prompt.key(['C-c'], function(ch, key) {
+    return process.exit(0);
+  });
+
+  prompt.key('pageup', function(data) {
+    display.scroll(-display.height);
+    userScrollPerc = display.getScrollPerc();
+    screen.render();
+  });
+
+  prompt.key('pagedown', function(data) {
+    display.scroll(display.height);
+    userScrollPerc = display.getScrollPerc();
+    screen.render();
+  });
+
+  // Quit on Control-C.
+  screen.key(['C-c'], function(ch, key) {
+    return process.exit(0);
+  });
+
+  screen.on('resize', function() { screen.render(); });
+
+  // Focus our element.
+  prompt.focus();
+  // screen.saveFocus();
+  display.show();
+
+  // Render the screen.
+  screen.render();
+
+  // if(cfg.OPTS.OPS.VERBOSE_START) {
+  //   print(ink.itag+' zui events imported'.head+'  ...................'.info+'  '+ink.lbk+ink.ok+ink.rbk);
+  //   print(ink.itag+' zui emitter activated'.head+'  .................'.info+'  '+ink.lbk+ink.ok+ink.rbk);
+  //
+  //   cfg.printConfig();
+  // }
+}
+
+// start();

@@ -1,0 +1,230 @@
+// core.js - core IRC Layer
+
+var irc         = require('irc');
+var events      = require('events');
+
+var date        = require('../date').get;
+var ink         = require('../ui/ink');
+var cfg         = require('../config/config.json');
+
+var ee = new events.EventEmitter();
+
+var connected = false;
+
+var curchan = '';
+
+var bot = bot;
+
+var botname = cfg.irc.botname;
+
+// TODO: add command to toggle
+var viewRawServerMsgs = true;
+
+
+exports.getBot = function() {
+  if(connected) return bot;
+  else return null;
+}
+
+
+ee.on('sendMsg', function(to, msg) {
+ 	bot.say(to, msg);
+});
+ee.on('sendReport', function(args) {
+ 	bot.say(args[0], args[1]);
+});
+ee.on('sendNotice', function(to, msg) {
+  bot.notice(to, msg);
+});
+ee.on('sendCmd', function(cmd, chan, arg) {
+  bot.send(cmd, chan, arg);
+});
+
+
+var toUi, fromUi;
+
+exports.registerUi = function(toUiCallback, fromUiCallback) {
+  toUi = toUiCallback;
+  // fromUiCallback();
+}
+
+
+exports.connect = function(server, port) {
+
+  if(cfg.irc.options.autoConnect) {
+    // toUi(ink.itag+" Connecting to "+cfg.irc.server.bold+" port "+cfg.irc.options.port.toString().bold+"...");
+    toUi(
+      {
+        window: cfg.irc.server + ':' + cfg.irc.options.port,
+        status: cfg.irc.botname + ' status',
+        data: ink.itag+" Connecting to "+cfg.irc.server.bold+" port "+cfg.irc.options.port.toString().bold+"..."
+      });
+  }
+
+  bot = new irc.Client(cfg.irc.server, cfg.irc.botname, cfg.irc.options);
+
+  bot.addListener('registered', function(){
+    connected = true;
+    // toUi(ink.itag+" Connected and registered.".green.bold);
+    toUi(
+      {
+        window: cfg.irc.server + ':' + cfg.irc.options.port,
+        status: cfg.irc.botname + ' status',
+        data: ink.itag+" Connected and registered.".green.bold
+      });
+  });
+
+  // setup listener for message sent to any channel we are in
+  //bot.addListener('message#', triviaCmd.main);
+  // bot.addListener('message#', toUi);
+  bot.addListener('message', (nick, to, text, msg) => {
+    toUi(
+      {
+        window: cfg.irc.server + ':' + cfg.irc.options.port,
+        status: cfg.irc.botname + ' ' + (to === cfg.irc.botname ? nick : to),
+        data: '<'+nick+'> ' + text
+      }
+    );
+  });
+
+  bot.addListener('selfMessage', (to, text) => {
+    toUi(
+      {
+        window: cfg.irc.server + ':' + cfg.irc.options.port,
+        status: cfg.irc.botname + ' ' + to,
+        data: '<'+cfg.irc.botname+'> ' + text
+      }
+    );
+  });
+
+
+  // setup listener to handle private messages (login commands etc)
+  // bot.addListener('pm', ircCmd.main);
+
+  bot.addListener('join', function(chan, nick, msg) { // do stuff when users join
+    if(nick == cfg.irc.botname) { // do stuff when bot joins
+      curchan = chan;
+      toUi(
+        {
+          window: cfg.irc.server + ':' + cfg.irc.options.port,
+          status: nick + ' ' + chan,
+          data: nick + ' has joined ' + chan
+        }
+      );
+      //bot.say(chan, "There will be cake.");
+
+      // on bot join, check if channel is managed and if so do so
+      // chanCfg.manageModes(nick, chan);
+
+      // calendar.manageGoogleCalEvents();
+      return;
+    }
+
+  bot.addListener('part', function(channel, nick) {
+    // if(usersCfg.userExists(nick)) usersCfg.logout(nick);
+  });
+
+  bot.addListener('quit', function(nick) { // logout user on quit
+    // if(usersCfg.userExists(nick)) usersCfg.logout(nick);
+  });
+
+  bot.addListener('nick', function(nick, newnick, channels) { // logout on nick change
+    // if(usersCfg.userExists(nick)) {
+    //   usersCfg.logout(nick);
+    //
+    //   if(usersCfg.userExists(newnick)) {
+    //     if(usersCfg.usesNickAuth(newnick)) { // simple nick auth
+    //       channels.forEach(function(item) {
+    //         nausers.addUserPendingAuth(newnick, item);
+    //       });
+    //     }
+    //   }
+    // }
+  });
+
+  // Bot error listener
+  bot.addListener('error', function(message) {
+    //console.error('ERROR: %s: %s',  message.args.join(' '));
+    toUi(ink.etag+' error: '.error + message.command + ' ' + message.args.join(' '));
+    //TODO: ipch.sendLog this error for ui integration
+  });
+
+
+
+    // if(usersCfg.userExists(nick)) {
+    //   if(usersCfg.usesNickAuth(nick) && !usersCfg.isLoggedIn(nick)) { // simple nick auth
+    //     nausers.addUserPendingAuth(nick, chan);
+    //   }
+    //   else if(usersCfg.isLoggedIn(nick)) {
+    //     chanCfg.autoOp(chan, nick);
+    //   }
+    // }
+  });
+
+  bot.addListener('+mode', function(chan, by, mode, arg, msg) {
+    //bot.say('#dev', chan+' '+by+' +'+mode+' '+arg);
+    // chanCfg.parseMode(chan, by, mode, arg, '+');
+  });
+
+  bot.addListener('-mode', function(chan, by, mode, arg, msg) {
+    //bot.say('#dev', chan+' '+by+' -'+mode+' '+arg);
+    // chanCfg.parseMode(chan, by, mode, arg, '-');
+  });
+
+  bot.addListener('raw', function(msg) {
+
+    if(viewRawServerMsgs) // TODO: data binding for view raw msgs feature
+      // ipch.sendLog('raw: '+ msg.prefix + ': '+ msg.rawCommand + ': ' + msg.args.join(' '));
+
+      if(msg.rawCommand === 'PRIVMSG') return;
+
+      var prefix = msg.prefix ? msg.prefix + ': ' : '';
+      // toUi(ink.wtag + ' ' + prefix.green + msg.rawCommand + ': ' + msg.args.join(' '));
+      toUi(
+        {
+          window: cfg.irc.server + ':' + cfg.irc.options.port,
+          status: cfg.irc.botname + ' status',
+          data: ink.wtag + ' ' + prefix.green + msg.rawCommand + ': ' + msg.args.join(' ')
+        });
+
+    // HANDLE MODES
+    // 'mode's format reported by raw event on channel join
+    // rpl_channelmodeis nurb #dev +nt <- nick chan modes
+    // rpl_channelmodeis == 324 in rawCommand (speeds up comparison)
+    if(msg.rawCommand == '324' && msg.args.length >= 3) {
+
+      if(msg.args.length == 4) msg.args[2] = msg.args[2]+' '+msg.args[3]; // tack on channel key
+
+      if(msg.args[0] == botname) {
+        // chanCfg.trackChannelModesOnJoin(msg.args[0], msg.args[1], msg.args[2]);
+      }
+    }
+  });
+
+  //ipch.sendLog('IRC Layer online  ..................  '.verbose+'[OK]'.info);
+}
+
+exports.isConnected = isConnected;
+function isConnected(set) {
+  if(set !== undefined) {
+    connected = set;
+    toUi(
+      {
+        window: cfg.irc.server + ':' + cfg.irc.options.port,
+        status: cfg.irc.botname + ' status',
+        data: ink.itag+" Disconnected.".green.bold
+      });
+    return set;
+  }
+
+  if(connected) return true;
+  else return false;
+}
+
+exports.setCurChan = function(chan) {
+  curchan = chan;
+}
+
+exports.getCurChan = function() {
+  return curchan;
+}

@@ -1,0 +1,60 @@
+{
+  "name": "ircnjs",
+  "version": "0.59.0 (niNJaS)",
+  "author" : "bangdollar",
+	"paths": {
+        "qa_data_path":"./qa_data/",
+        "qa_index":"qa_index.json",
+        "art":"./asciiart/",
+        "users":"./json/users.json",
+        "chans":"./json/channels.json",
+        "chan_logs":"./logs"
+			},
+	"irc": {
+        "server":"irc.subproto.com",
+        "options": {
+              "autoRejoin": true,
+              "autoConnect": false,
+              "retryCount": 0,
+              "channels":[],
+              "userName":"ircnjs",
+              "realName":"ircnjs (nodejs irc client - niNJaS)",
+              "port": 7000,
+              "secure":true,
+              "selfSigned":true,
+              "certExpired":true,
+              "debug":false,
+              "showErrors":false,
+              "floodProtection":false,
+              "floodProtectionDelay":500
+        },
+        "viewRawServerMsgs": true,
+        "ignoreCTCP": false,
+        "pingCommandStatus": "active|server",
+        "showServerPing": true,
+        "autoReconnect": false,
+        "defaultQuitMessage": "",
+        "defaultUserModes" : "iw",
+        "monitorCTCP": true,
+        "logging": {
+            "enabled":false,
+            "channels": {
+            },
+            "users": {
+            }
+        }
+			},
+  "fswatch": {
+    "announceModificationEvents": false,
+    "announceRenameEvents": true,
+    "announceFileContents": true
+  },
+	"oper": {
+        "debug":true,
+	 			"logging":true
+	 		},
+	"mods": {
+        "irc":true
+	 		}
+
+}

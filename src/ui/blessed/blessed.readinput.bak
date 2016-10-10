@@ -1,0 +1,338 @@
+/*  blessed window abstraction
+    zui nodejs ui
+
+    fetter (cc) 2015
+
+    TODO: add max scrollback
+*/
+
+// var top     = require('./top');
+var blessed = require('blessed');
+var events  = require('events');
+var history = require('./history');
+var date    = require('../../date').get;
+
+
+var ee;
+var screen = blessed.screen();
+
+ee = new events.EventEmitter();
+
+module.exports = BlessedWindow;
+
+function BlessedWindow(title, status) {
+  var self              = this;
+  this._title           = title;
+  this._status          = status;
+  this._output          = "";
+  this._editedCmd       = false;
+  this._userScrollPerc  = 100;
+
+  this.uistate = {window: 'init', status: 'init', data: '', action: ''};
+
+  self.prompt = blessed.Textbox({
+    parent: screen,
+    bottom: 0,
+    left: '0%',
+    width: '100%',
+    //height: '10',
+    shrink: "grow",
+    tags: true,
+    //keys: true,
+    //inputOnFocus: true,
+    // inputOnFocus: true,
+    label: self._status,
+    autoFocus: false,
+    border: {
+      // type: 'line'
+    },
+    style: {
+         fg: "white"
+      ,  border: { fg: "red"}
+      ,  hover:  { border: { fg: "green"}}
+      ,  focus:  { border: { fg: "green"}}
+      }
+  });
+
+  self.display = blessed.box({
+    parent: screen,
+    top: 0,
+    left: '0%',
+    width: '100%',
+    height: '100%-1',
+    //shrink: "grow",
+    tags: true,
+    scrollable: true,
+    clickable: false,
+    alwaysScroll: false,
+    input: true,
+    mouse: true,
+    scrollbar: {
+      ch: ' '
+    },
+    label: self._title,
+    border: {
+      // type: 'line'
+    },
+    style: {
+         fg: "white"
+      ,  border: { fg: "red"}
+      ,  hover:  { border: { fg: "green"}}
+      ,  focus:  { border: { fg: "green"}}
+
+      ,  scrollbar: {
+        inverse: true
+      }
+      }
+  });
+
+  screen.append(self.display);
+  screen.append(self.prompt);
+
+  self.display.setScrollPerc(100);
+
+  self.prompt.key('home', function(data) {
+    self.display.setScrollPerc(0);
+    self._userScrollPerc = 0;
+    screen.render();
+  });
+
+  self.prompt.key('end', function(data) {
+    self.display.setScrollPerc(100);
+    self._userScrollPerc = 100;
+    screen.render();
+  });
+
+  self.prompt.on('focus', function(data) {
+    // if(screen.focused === self.prompt) {
+      self.readInput(self.handleCmd);
+      self.print('focus event '+self._title);
+    // }
+    screen.render();
+  });
+
+  self.prompt.on('keypress', function(ch, key) {
+    if(key.name != "up" && key.name != "down") { // handle editing command from history
+      if(history.selected() && !self._editedCmd) {
+        self._editedCmd = true;
+        self.prompt.setValue(history.selected().cmd);
+        screen.render();
+      }
+    }
+    else self._editedCmd = false;
+  });
+
+  screen.on('mouse', function(data) {
+    if(data.action === 'wheelup') {
+      self.display.scroll(-self.display.height);
+      self._userScrollPerc = self.display.getScrollPerc();
+      screen.render();
+    } else if(data.action === 'wheeldown') {
+      self.display.scroll(self.display.height);
+      self._userScrollPerc = self.display.getScrollPerc();
+      screen.render();
+    }
+  });
+
+  // If box is focused, handle `enter`/`return` and give us some more content.
+  self.prompt.key('enter', function(ch, key) {
+    if(history.selected()) {
+      self.handleCmd(history.selected().cmd);
+      self.prompt.setContent('');
+      history.unselect();
+      // self.prompt.focus();
+    }
+    else {
+      self.readInput(self.handleCmd);
+      self.prompt.clearValue();
+    }
+    screen.render();
+  });
+
+  self.prompt.key('up', function(ch, key) {
+    var o = history.selectPrev();
+
+    if(o) {
+      self.prompt.setContent(o.formatted);
+      screen.render();
+      self.readInput(self.handleCmd);
+    }
+  });
+
+  self.prompt.key('down', function(ch, key) {
+    var o = history.selectNext();
+
+    if(o) {
+      self.prompt.setContent(o.formatted);
+      screen.render();
+      self.readInput(self.handleCmd);
+    }
+    else {
+      self.prompt.setContent('');
+      screen.render();
+    }
+  });
+
+  self.prompt.key('escape', function(ch, key) {
+    self.readInput(self.handleCmd);
+    screen.render();
+  });
+
+  self.prompt.key(['M-left'], function(ch, key) { // alt-left arrow
+    self.emitAction('window prev');
+  });
+
+  self.prompt.key(['M-right'], function(ch, key) { // alt-right arrow
+    self.emitAction('window next');
+  });
+
+  self.prompt.key(['C-c'], function(ch, key) { // ctrl-c
+    return process.exit(0);
+  });
+
+  self.prompt.key('pageup', function(data) {
+    self.display.scroll(-self.display.height);
+    self._userScrollPerc = self.display.getScrollPerc();
+    screen.render();
+  });
+
+  self.prompt.key('pagedown', function(data) {
+    self.display.scroll(self.display.height);
+    self._userScrollPerc = self.display.getScrollPerc();
+    screen.render();
+  });
+
+  // Quit on Control-C.
+  screen.key(['C-c'], function(ch, key) {
+    return process.exit(0);
+  });
+
+  screen.on('resize', function() { screen.render(); });
+
+  self.display.show();
+  // Focus our element.
+  self.prompt.show();
+  // self.prompt.focus();
+  // if(self.prompt.hidden) {
+    // self.prompt.show();
+    // self.prompt.focus();
+    self.print('instance focused: '+self._title);
+  // }
+
+  // screen.saveFocus();
+
+
+  // Render the screen.
+  screen.render();
+  // return this;
+}
+
+
+BlessedWindow.prototype = {
+  readInput: function(callback) {
+    var self = this;
+    self.prompt.readInput(function(err, data) {
+      if(err) {
+        self.print('Error: '+err);
+        return;
+      }
+
+      if(history.selected()) history.unselect();
+
+      // prompt.clearValue();
+      screen.render();
+      callback.call(self, data);
+    });
+  },
+  // Share the user input with any command interperters, etc.
+  emitInput: function(data) {
+    var self = this;
+    //if(uistate === undefined) uistate = {window: 'init', status: 'init', data: d};
+    self.uistate.data = data;
+    ee.emit('zuiCon', self.uistate);
+    // var test = {window: 'init', status: 'init', data: data};
+    // ee.emit('zuiCon', test);
+  },
+  emitAction: function(action) {
+    var self = this;
+    self.uistate.action = action;
+    ee.emit('zuiCon', self.uistate);
+    self.uistate.action = '';
+  },
+  handleCmd: function(cmd) {
+    var self = this;
+    if(cmd) {
+      history.add(cmd);
+      self.emitInput(cmd);// send cmd package to consumers
+      //print(cmd);
+    }
+  },
+  update: function(window, data) { // update ui
+    var self = this;
+    if(window.title) {
+      self.display.setLabel({text: window.title});
+      self._title = window.title;
+    }
+    if(window.status) {
+      self.prompt.setLabel({text: window.status});
+      self._status = window.status;
+    }
+    self.print(date() + ' ' + data);
+  },
+  print: function(data) { // send data to output display area with additional \n
+    // TODO: add max scrollback config options in start(). Currently, infinite (eats mem)
+
+    // var self = this;
+    // self._output+=data+"\n";
+
+    // self.display.setContent(self._output);
+    this.display.pushLine(data);
+
+    if(this._userScrollPerc == 100) this.display.setScrollPerc(100);
+    screen.render();
+  },
+  write: function(data) { // send data to output display area with no additional \n
+    // TODO: add max scrollback config options in start(). Currently, infinite (eats mem)
+    var self = this;
+    self._output+=data;
+
+    self.display.setContent(self._output);
+
+    if(self._userScrollPerc == 100) self.display.setScrollPerc(100);
+    screen.render();
+  },
+  // Call this with a callback(data) to handle any input provided by user to zui.
+  addListener: function(callback) {
+    ee.on('zuiCon', callback);
+    // ee.on('zuiData', callback);
+  },
+  removeListener: function (callback) {
+    ee.removeListener('zuiCon', callback);
+  },
+  focus: function () {
+    var self = this;
+    // self.prompt.show();
+    self.display.show();
+    // if(self.prompt.hidden) self.prompt.show();
+
+    // self.prompt.focus();
+    // if(!self.prompt.visible) {
+      self.prompt.show();
+      self.prompt.focus();
+      self.print('focusing: '+self._title);
+    // }
+
+    // self.prompt.focus();
+
+    screen.render();
+  },
+  hide: function () {
+    var self = this;
+    // self.prompt.show();
+
+    self.display.hide();
+    self.prompt.hide();
+    // screen.focusPop();
+    screen.render();
+  }
+}

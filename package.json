@@ -1,0 +1,35 @@
+{
+  "name": "ircnjs",
+  "version": "0.59.0",
+  "description": "nodejs irc client",
+  "main": "./src/main.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": ""
+  },
+  "keywords": [
+    "irc",
+    "irc client",
+    "internet relay chat",
+    "internet relay chat client",
+    "node",
+    "nodejs",
+    "plugin",
+    "plugins"
+  ],
+  "dependencies": {
+    "blessed": "^0.1.81",
+    "colors": "^1.1.2",
+    "irc": "^0.4.1",
+    "promise": "^7.1.1",
+    "underscore": "^1.8.3"
+  },
+  "engine": "node 4.3.1",
+  "author": "bangdollar",
+  "license": "MIT",
+  "devDependencies": {
+  }
+}
